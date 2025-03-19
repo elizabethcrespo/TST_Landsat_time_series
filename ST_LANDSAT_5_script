@@ -29,6 +29,7 @@
 var startYear = 1985;
 var endYear = 2011;
 // ---------------------------
+
 // Function to apply scaling factors and cloud masking
 function applyScaleAndMaskL5(image) {
   var qa = image.select('QA_PIXEL');
@@ -40,12 +41,14 @@ function applyScaleAndMaskL5(image) {
   // Returns only the thermal band with cloud mask applied
   return image.addBands(thermalBand.rename('Thermal_K')).updateMask(cloudMask);
 }
+// ---------------------------
 
 // Function to convert the thermal band from Kelvin to Celsius
 function convertToCelsius(image) {
   var thermalCelsius = image.select('Thermal_K').subtract(273.15).rename('Thermal_Celsius');
   return image.addBands(thermalCelsius);
 }
+// ---------------------------
 
 // Function to process the Landsat 5 collection for each year
 function processLandsatCollectionL5(region, year) {
@@ -66,12 +69,13 @@ function processLandsatCollectionL5(region, year) {
   print('Ano:', year, '| Número de Imagens:', imageCount);
   return imageCount.gt(0) ? medianImage : null;
 }
+// ---------------------------
 
 // Loop to process each year and add it to the map
 for (var year = startYear; year <= endYear; year++) {
   var annualImage = processLandsatCollectionL5(ROI, year);
 
-  // Verifica se a imagem do ano existe antes de adicionar ao mapa
+  // Check if the image for the year exists before adding it to the map 
   if (annualImage !== null) {
     Map.addLayer(annualImage.select('Thermal_Celsius'), {min: 10, max: 40, palette: ['blue', 'cyan', 'green', 'yellow', 'red']}, 'Landsat 5 Thermal - ' + year);
   } else {
