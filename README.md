@@ -1,7 +1,7 @@
 # TST_Landsat_time_series
 
 This repository contains open-source code from my projects using **Google Earth Engine** for environmental applications.
-The scripts, written in JavaScript, analyze land surface temperature (LST) time series using Landsat 5.
+The scripts, written in JavaScript, creates land surface temperature (LST) time series using Landsat 5.
 
 **Author:** Elizabeth Albernaz Crespo (elizabeth.eacrespo@gmail.com)
 
