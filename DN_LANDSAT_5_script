@@ -1,6 +1,6 @@
 // 
 // This script calculates the Land Surface Temperature (LST) 
-// using Digital Numbers (DN) from Landsat 5.
+// using the annual median of the image collection in Digital Numbers (DN) from Landsat 5.
 //
 // The LST is calculated based on:
 // - TOA Radiance (Top of Atmosphere)
@@ -16,11 +16,13 @@
 // By using this code or any derived data,  
 // you agree to cite the following reference in any related publications:
 //
-// Albernaz Crespo, E. C. E., 2025.  
+// Albernaz Crespo, E. C. E., 2025. 55f.  
 // Análise Temporal da Temperatura de Superfície em Área Urbana por Sensoriamento Remoto.
 // Trabalho de Conclusão de Curso (Graduação em Ciência Ambiental) – Universidade Federal Fluminense, Niterói.
 //
 // Remember to modify the following parameters:
+// - Landsat collection
+// - Constants and Wavelength changes for each Landsat
 // - Date
 // - Study area location (ROI)
 // ---------------------------
@@ -32,9 +34,9 @@ var endYear = 2011;
 
 // Function to calculate radiance from the DN collection 
 function applyRadianceDN(image) {
-  var ML = ee.Number(image.get('RADIANCE_MULT_BAND_6')); // Multiplicativo
-  var AL = ee.Number(image.get('RADIANCE_ADD_BAND_6')); // Aditivo
-  var thermalBand = image.select('B6'); // Banda termal (DN)
+  var ML = ee.Number(image.get('RADIANCE_MULT_BAND_6'));
+  var AL = ee.Number(image.get('RADIANCE_ADD_BAND_6'));
+  var thermalBand = image.select('B6'); // Thermal band in DN
 
   var radiance = thermalBand.expression(
     '(ML * DN) + AL', {
@@ -48,10 +50,10 @@ function applyRadianceDN(image) {
 
 // Function to calculate Brightness Temperature (Tb) using radiance 
 function calculateBrightnessTemperature(image) {
-  var K1 = ee.Number(image.get('K1_CONSTANT_BAND_6')); // Constante K1
-  var K2 = ee.Number(image.get('K2_CONSTANT_BAND_6')); // Constante K2
+  var K1 = ee.Number(image.get('K1_CONSTANT_BAND_6')); // Constant K1
+  var K2 = ee.Number(image.get('K2_CONSTANT_BAND_6')); // Constant K2
 
-  var radiance = image.select('Radiance'); // Banda de radiância escalada
+  var radiance = image.select('Radiance');
 
   var brightnessTemperature = radiance.expression(
     'K2 / log((K1 / radiance) + 1)', {
@@ -67,8 +69,8 @@ function calculateBrightnessTemperature(image) {
 // Function to apply scaling factors and cloud masking to the SR collection
 function applyScaleAndMask_SR(image) {
   var qa = image.select('QA_PIXEL');
-  var cloudMask = qa.bitwiseAnd(1 << 3).or(qa.bitwiseAnd(1 << 5)).not(); // Máscara de nuvens e sombras
-  var opticalBands = image.select('SR_B.').multiply(0.0000275).add(-0.2); // Escala para bandas ópticas
+  var cloudMask = qa.bitwiseAnd(1 << 3).or(qa.bitwiseAnd(1 << 5)).not();
+  var opticalBands = image.select('SR_B.').multiply(0.0000275).add(-0.2);
   return image.addBands(opticalBands, null, true).updateMask(cloudMask);
 }
 // ---------------------------
@@ -90,7 +92,7 @@ function calculateIndicesAndEmissivity(image) {
 
 // Function to calculate LST using Brightness Temperature (Tb) and adjusted emissivity
 function calculateTST(image, emissivity) {
-  var brightnessTemperature = image.select('Brightness_Temperature'); // Usa a Tb calculada
+  var brightnessTemperature = image.select('Brightness_Temperature');
 /*
   // Constants for LST calculation
   var λ = 10.4 = 0.00104; // Wavelength of Landsat 5
@@ -119,11 +121,11 @@ function processLandsatCollection(region, year) {
     .filter(ee.Filter.lt('CLOUD_COVER', 30))
     .map(applyScaleAndMask_SR)
     .map(calculateIndicesAndEmissivity);
-
+//-------------------------------------
   // Extract average emissivity from the SR collection
   var medianSR = srCollection.median().clip(region);
   var emissivity = medianSR.select('Emissivity');
-
+//-------------------------------------
   // Process LST using the DN collection
   var dnCollection = ee.ImageCollection('LANDSAT/LT05/C02/T1')
     .filterDate(startDate, endDate)
@@ -132,7 +134,7 @@ function processLandsatCollection(region, year) {
     .map(applyRadianceDN)
     .map(calculateBrightnessTemperature)
     .map(function(image) {
-      return calculateTST(image, emissivity); // Usa emissividade da SR
+      return calculateTST(image, emissivity);
     });
 
   // Compute the annual median of the processed DN collection
@@ -147,7 +149,7 @@ for (var year = startYear; year <= endYear; year++) {
   if (annualImage) {
     Map.addLayer(annualImage.select('TST_Celsius'), {min: 10, max: 40, palette: ['blue', 'cyan', 'green', 'yellow', 'red']}, 'Landsat 5 TST - ' + year);
   } else {
-    print('Sem dados para o ano:', year);
+    print('No data available for the year', year);
   }
 }
 
