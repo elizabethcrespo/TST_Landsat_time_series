@@ -1,0 +1,156 @@
+// 
+// This script calculates the Land Surface Temperature (LST) 
+// using Digital Numbers (DN) from Landsat 5.
+//
+// The LST is calculated based on:
+// - TOA Radiance (Top of Atmosphere)
+// - Brightness Temperature
+// - Emissivity (calculated using indices such as NDVI, FVC, and LAI,  
+//   derived from Surface Reflectance (SR) images).
+//
+// Author: Elizabeth Crespo
+// Date: 2023-02-12
+// Email: elizabeth.eacrespo@gmail.com
+//
+// This code is free and open-source.  
+// By using this code or any derived data,  
+// you agree to cite the following reference in any related publications:
+//
+// Albernaz Crespo, E. C. E., 2025.  
+// Análise Temporal da Temperatura de Superfície em Área Urbana por Sensoriamento Remoto.
+// Trabalho de Conclusão de Curso (Graduação em Ciência Ambiental) – Universidade Federal Fluminense, Niterói.
+//
+// Remember to modify the following parameters:
+// - Date
+// - Study area location (ROI)
+// ---------------------------
+//
+// Input Parameters for Landsat 5
+var startYear = 1985;
+var endYear = 2011;
+// ---------------------------
+
+// Function to calculate radiance from the DN collection 
+function applyRadianceDN(image) {
+  var ML = ee.Number(image.get('RADIANCE_MULT_BAND_6')); // Multiplicativo
+  var AL = ee.Number(image.get('RADIANCE_ADD_BAND_6')); // Aditivo
+  var thermalBand = image.select('B6'); // Banda termal (DN)
+
+  var radiance = thermalBand.expression(
+    '(ML * DN) + AL', {
+      'ML': ML,
+      'AL': AL,
+      'DN': thermalBand
+    }).rename('Radiance');
+
+  return image.addBands(radiance);
+}
+
+// Function to calculate Brightness Temperature (Tb) using radiance 
+function calculateBrightnessTemperature(image) {
+  var K1 = ee.Number(image.get('K1_CONSTANT_BAND_6')); // Constante K1
+  var K2 = ee.Number(image.get('K2_CONSTANT_BAND_6')); // Constante K2
+
+  var radiance = image.select('Radiance'); // Banda de radiância escalada
+
+  var brightnessTemperature = radiance.expression(
+    'K2 / log((K1 / radiance) + 1)', {
+      'K1': K1,
+      'K2': K2,
+      'radiance': radiance
+    }).rename('Brightness_Temperature');
+
+  return image.addBands(brightnessTemperature);
+}
+// ---------------------------
+
+// Function to apply scaling factors and cloud masking to the SR collection
+function applyScaleAndMask_SR(image) {
+  var qa = image.select('QA_PIXEL');
+  var cloudMask = qa.bitwiseAnd(1 << 3).or(qa.bitwiseAnd(1 << 5)).not(); // Máscara de nuvens e sombras
+  var opticalBands = image.select('SR_B.').multiply(0.0000275).add(-0.2); // Escala para bandas ópticas
+  return image.addBands(opticalBands, null, true).updateMask(cloudMask);
+}
+// ---------------------------
+
+// Function to calculate NDVI, FVC, LAI, and Emissivity using the SR collection
+function calculateIndicesAndEmissivity(image) {
+  var ndvi = image.expression('(nir - red) / (nir + red)', {
+    'nir': image.select('SR_B4'), // Banda NIR da SR
+    'red': image.select('SR_B3')  // Banda Red da SR
+  }).rename('NDVI');
+
+  var fvc = ndvi.expression('1.1101 * ndvi - 0.0857', {'ndvi': ndvi}).clamp(0, 1).rename('FVC');
+  var lai = fvc.expression('-2 * log(1 - fvc)', {'fvc': fvc}).rename('LAI');
+  var emissivity = lai.expression('0.97 + 0.0033 * lai', {'lai': lai}).rename('Emissivity');
+
+  return image.addBands(ndvi).addBands(fvc).addBands(lai).addBands(emissivity);
+}
+// ---------------------------
+
+// Function to calculate LST using Brightness Temperature (Tb) and adjusted emissivity
+function calculateTST(image, emissivity) {
+  var brightnessTemperature = image.select('Brightness_Temperature'); // Usa a Tb calculada
+/*
+  // Constants for LST calculation
+  var λ = 10.4 = 0.00104; // Wavelength of Landsat 5
+  var α = 1.4388 = 0.48359547432; // Planck's constant
+*/
+  var TST_Kelvin = brightnessTemperature.expression(
+       'Tb / (1 + (0.00104 * (Tb/0.48359547432)) * log(em))',{
+      'Tb': brightnessTemperature,
+      'em': emissivity
+    }).rename('TST_Kelvin');
+
+  var TST_Celsius = TST_Kelvin.subtract(273.15).rename('TST_Celsius');
+  return image.addBands(TST_Celsius);
+}
+//-------------------------------------
+
+// Function to process Landsat collections for each year
+function processLandsatCollection(region, year) {
+  var startDate = ee.Date.fromYMD(year, 1, 1);
+  var endDate = ee.Date.fromYMD(year, 12, 31);
+
+  // Process indices using the SR collection
+  var srCollection = ee.ImageCollection('LANDSAT/LT05/C02/T1_L2')
+    .filterDate(startDate, endDate)
+    .filterBounds(region)
+    .filter(ee.Filter.lt('CLOUD_COVER', 30))
+    .map(applyScaleAndMask_SR)
+    .map(calculateIndicesAndEmissivity);
+
+  // Extract average emissivity from the SR collection
+  var medianSR = srCollection.median().clip(region);
+  var emissivity = medianSR.select('Emissivity');
+
+  // Process LST using the DN collection
+  var dnCollection = ee.ImageCollection('LANDSAT/LT05/C02/T1')
+    .filterDate(startDate, endDate)
+    .filterBounds(region)
+    .filter(ee.Filter.lt('CLOUD_COVER', 30))
+    .map(applyRadianceDN)
+    .map(calculateBrightnessTemperature)
+    .map(function(image) {
+      return calculateTST(image, emissivity); // Usa emissividade da SR
+    });
+
+  // Compute the annual median of the processed DN collection
+  var medianDN = dnCollection.median().clip(region);
+  return medianDN.bandNames().size().gt(0) ? medianDN : null;
+}
+
+// Loop to process each year and add it to the map
+for (var year = startYear; year <= endYear; year++) {
+  var annualImage = processLandsatCollection(ROI, year);
+
+  if (annualImage) {
+    Map.addLayer(annualImage.select('TST_Celsius'), {min: 10, max: 40, palette: ['blue', 'cyan', 'green', 'yellow', 'red']}, 'Landsat 5 TST - ' + year);
+  } else {
+    print('Sem dados para o ano:', year);
+  }
+}
+
+Map.centerObject(ROI, 10);
+
+
