@@ -1,0 +1,82 @@
+// This script calculates the Land Surface Temperature (LST) 
+// using the annual median of the image collection of the band ST_6 from Landsat 5.
+//
+// The LST is calculated based on:
+// - Surface Temperature Band
+// - Emissivity (derived from ASTER GED).
+//
+// Author: Elizabeth Crespo
+// Date: 2023-02-12
+// Email: elizabeth.eacrespo@gmail.com
+//
+// This code is free and open-source.  
+// By using this code or any derived data,  
+// you agree to cite the following reference in any related publications:
+//
+// Albernaz Crespo, E. C. E., 2025. 55f.  
+// Análise Temporal da Temperatura de Superfície em Área Urbana por Sensoriamento Remoto.
+// Trabalho de Conclusão de Curso (Graduação em Ciência Ambiental) – Universidade Federal Fluminense, Niterói.
+//
+// Remember to modify the following parameters:
+// - Landsat collection
+// - Constants and Wavelength changes for each Landsat
+// - Date
+// - Study area location (ROI)
+// - Temperature unit
+// ---------------------------
+
+// Input Parameters for Landsat 5
+var startYear = 1985;
+var endYear = 2011;
+// ---------------------------
+// Function to apply scaling factors and cloud masking
+function applyScaleAndMaskL5(image) {
+  var qa = image.select('QA_PIXEL');
+  var cloudMask = qa.bitwiseAnd(1 << 3).or(qa.bitwiseAnd(1 << 5)).not(); // Máscara de nuvens e sombras
+
+  // Scale and offset of the thermal band ST_B6
+  var thermalBand = image.select('ST_B6').multiply(0.00341802).add(149.0);
+
+  // Returns only the thermal band with cloud mask applied
+  return image.addBands(thermalBand.rename('Thermal_K')).updateMask(cloudMask);
+}
+
+// Function to convert the thermal band from Kelvin to Celsius
+function convertToCelsius(image) {
+  var thermalCelsius = image.select('Thermal_K').subtract(273.15).rename('Thermal_Celsius');
+  return image.addBands(thermalCelsius);
+}
+
+// Function to process the Landsat 5 collection for each year
+function processLandsatCollectionL5(region, year) {
+  var startDate = ee.Date.fromYMD(year, 1, 1);
+  var endDate = ee.Date.fromYMD(year, 12, 31);
+
+  // Filtered and processed collection
+  var annualCollection = ee.ImageCollection('LANDSAT/LT05/C02/T1_L2')
+    .filterDate(startDate, endDate)
+    .filterBounds(region)
+    .filter(ee.Filter.lt('CLOUD_COVER', 30)) // Filtro de nuvens
+    .map(applyScaleAndMaskL5) // Aplica máscara e escalas
+    .map(convertToCelsius); // Converte para Celsius
+
+  // Calculates the annual median and returns it
+  var medianImage = annualCollection.median().clip(region);
+  var imageCount = annualCollection.size();
+  print('Ano:', year, '| Número de Imagens:', imageCount);
+  return imageCount.gt(0) ? medianImage : null;
+}
+
+// Loop to process each year and add it to the map
+for (var year = startYear; year <= endYear; year++) {
+  var annualImage = processLandsatCollectionL5(ROI, year);
+
+  // Verifica se a imagem do ano existe antes de adicionar ao mapa
+  if (annualImage !== null) {
+    Map.addLayer(annualImage.select('Thermal_Celsius'), {min: 10, max: 40, palette: ['blue', 'cyan', 'green', 'yellow', 'red']}, 'Landsat 5 Thermal - ' + year);
+  } else {
+    print('Sem dados para o ano:', year);
+  }
+}
+
+Map.centerObject(ROI, 10);
