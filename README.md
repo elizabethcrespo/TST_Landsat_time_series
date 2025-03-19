@@ -3,6 +3,12 @@
 This repository contains open-source code from my projects using **Google Earth Engine** for environmental applications.
 The scripts, written in JavaScript, creates land surface temperature (LST) time series using Landsat 5.
 
+Here you will find three methods to calculate LST, based on:
+
+- Surface Temperature (ST) band
+- Thermal band converted to radiance (TRAD)
+- Digital Numbers (DN) band
+
 **Author:** Elizabeth Albernaz Crespo (elizabeth.eacrespo@gmail.com)
 
 This code is free and open-source.
