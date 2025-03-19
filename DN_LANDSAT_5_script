@@ -25,6 +25,7 @@
 // - Constants and Wavelength changes for each Landsat
 // - Date
 // - Study area location (ROI)
+// - Temperature unit
 // ---------------------------
 //
 // Input Parameters for Landsat 5
