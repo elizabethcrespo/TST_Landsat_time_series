@@ -8,7 +8,7 @@ The scripts, written in JavaScript, analyze land surface temperature (LST) time 
 This code is free and open-source.
 By using this code or any derived data, you agree to cite the following reference in any related publications:
 
-> Albernaz Crespo, E. C. E., 2025.
+> Albernaz Crespo, E. C. E., 2025. 55f.
 Análise Temporal da Temperatura de Superfície em Área Urbana por Sensoriamento Remoto.
 Trabalho de Conclusão de Curso (Graduação em Ciência Ambiental) – Universidade Federal Fluminense, Niterói.
 
